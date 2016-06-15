@@ -12,6 +12,8 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <signal.h>
+#include <rpc/xdr.h>
 
 #define MAX_LINE_LEN 100
 
@@ -21,8 +23,9 @@ int main(int argc, char *argv[]) {
   int port;
   int s;
   char line[MAX_LINE_LEN];
-  int a, b;
+  int a, b, c;
   FILE *fsock_in, *fsock_out;
+  XDR xdrs_in, xdrs_out;
   
   if(argc != 3) {
     fprintf(stderr, "Usage: %s <address> <port>\n", argv[0]);
@@ -42,18 +45,19 @@ int main(int argc, char *argv[]) {
   
   s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if(s < 0) {
-    fprintf(stderr, "Impossible to create socket\n");
+    perror("Impossible to create socket");
     return 1;
   }
   if(connect(s, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-    fprintf(stderr, "Impossible to connect: \n");
-    perror(NULL);
+    perror("Impossible to connect");
     return 1;
   }
   printf("Connection estabilished. Write 'end' to quit\n");
   
   fsock_in = fdopen(s, "r");
   fsock_out = fdopen(s, "w");
+  xdrstdio_create(&xdrs_in, fsock_in, XDR_DECODE);
+  xdrstdio_create(&xdrs_out, fsock_out, XDR_ENCODE);
   
   if(fsock_in == NULL || fsock_out == NULL) {
     fprintf(stderr, "Impossible to fdopen\n");
@@ -71,17 +75,20 @@ int main(int argc, char *argv[]) {
     if(sscanf(line, "%d %d", &a, &b) != 2) {
       printf("Wrong input\n");
     } else {
-      fprintf(fsock_out, "%d %d\r\n", a, b);
+      //fprintf(fsock_out, "%d %d\r\n", a, b);
+      xdr_int(&xdrs_out, &a);
+      xdr_int(&xdrs_out, &b);
       printf("Sent\n");
-      fgets(line, MAX_LINE_LEN, fsock_in);
-      printf("Received answer: %s\n", line);
+      //fgets(line, MAX_LINE_LEN, fsock_in);
+      xdr_int(&xdrs_in, &c);
+      printf("Received answer: %d\n", c);
     }
   }
   
-  fdclose(fsock_in);
-  fdclose(fsock_out);
-  
+  xdr_destroy(&xdrs_in);
+  xdr_destroy(&xdrs_out);
+  fclose(fsock_in);
+  fclose(fsock_out);
   close(s);
   return 0;
 }
-

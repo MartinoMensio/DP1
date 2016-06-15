@@ -185,9 +185,13 @@ int main(int argc, char *argv[]) {
         fwrite(buffer, sizeof(char), n_read, fsock_out);
         if(sigpipe) {
           printf("Need to stop because of SIGPIPE\n");
+          fclose(file);
           break;
         }
       }
+      fclose(file);
+      
+      printf("File sent\n");
     }
     
     fclose(fsock_out);

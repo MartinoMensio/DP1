@@ -1,3 +1,6 @@
+# my binary files to be ignored
+*.ignore
+
 # Object files
 *.o
 *.ko
