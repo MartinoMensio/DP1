@@ -41,11 +41,11 @@ int main(int argc, char *argv[]) {
   
   s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if(s < 0) {
-    fprintf(stderr, "Impossible to create socket\n");
+    perror("Impossible to create socket");
     return 1;
   }
   if(connect(s, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-    fprintf(stderr, "Impossible to connect: \n");
+    perror("Impossible to connect");
     perror(NULL);
     return 1;
   }
@@ -76,6 +76,9 @@ int main(int argc, char *argv[]) {
     }
     printf("Received answer: %s\n", line);
   }
+  
+  fclose(fsock_in);
+  fclose(fsock_out);
   
   close(s);
   return 0;

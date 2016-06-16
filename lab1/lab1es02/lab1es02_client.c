@@ -37,12 +37,11 @@ int main(int argc, char *argv[]) {
   
   s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if(s < 0) {
-    fprintf(stderr, "Impossible to create socket\n");
+    perror("Impossible to create socket");
     return 1;
   }
   if(connect(s, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-    fprintf(stderr, "Impossible to connect: \n");
-    perror(NULL);
+    perror("Impossible to connect");
     return 1;
   }
   printf("Connection estabilished\n");
