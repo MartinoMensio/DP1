@@ -83,8 +83,8 @@ int main(int argc, char *argv[]) {
   
   printf("Socket listen done\n");
   
-  signal(SIGPIPE, sigpipeHndlr);
   sigpipe = 0;
+  signal(SIGPIPE, sigpipeHndlr);
   
   while(1) {
     caddr_len = sizeof(caddr);
@@ -184,7 +184,7 @@ int main(int argc, char *argv[]) {
       while((n_read = fread(buffer, sizeof(char), DATA_CHUNK_SIZE, file)) > 0) {
         fwrite(buffer, sizeof(char), n_read, fsock_out);
         if(sigpipe) {
-          printf("Need to stop because of SIGPIPE\n");
+          printf("Client closed socket\n");
           fclose(file);
           break;
         }

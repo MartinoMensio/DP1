@@ -23,6 +23,10 @@
 #define OK_MSG "+OK\r\n"
 #define DATA_CHUNK_SIZE 1024*1024
 
+int sigpipe;
+
+void sigpipeHndlr(int);
+
 int main(int argc, char *argv[]) {
   
   struct sockaddr_in saddr;
@@ -80,6 +84,10 @@ int main(int argc, char *argv[]) {
   // unbuffered write
   setbuf(fsock_out, 0);
   
+  // set SIGPIPE handler in order to avoid crashes
+  sigpipe = 0;
+  signal(SIGPIPE, sigpipeHndlr);
+  
   printf("Ready. Write 'end' to quit\n");
   
   while(1) {
@@ -94,6 +102,10 @@ int main(int argc, char *argv[]) {
     }
     
     fprintf(fsock_out, "%s %s\r\n", GET_MSG, file_name);
+    if(sigpipe) {
+      printf("Socket was closed by server\n");
+      break;
+    }
     
     fgets(command, MAX_COMMAND_LEN, fsock_in);
     if(strncmp(command, ERR_MSG, MAX_COMMAND_LEN) == 0) {
@@ -103,7 +115,7 @@ int main(int argc, char *argv[]) {
     
     if(strncmp(command, OK_MSG, MAX_COMMAND_LEN) != 0) {
       printf("Received an unknown response from server: %s\n", command);
-      break;
+      continue;
     }
     
     file = fopen(file_name, "w");
@@ -112,11 +124,17 @@ int main(int argc, char *argv[]) {
       continue;
     }
     
-    fread(&file_size_n, sizeof(uint32_t), 1, fsock_in);
+    if(fread(&file_size_n, sizeof(uint32_t), 1, fsock_in) < 1) {
+      printf("Error receiving file size\n");
+      break;
+    }
     file_size = ntohl(file_size_n);
     printf("Received file size: %u\n", file_size);
     
-    fread(&last_modification_n, sizeof(uint32_t), 1, fsock_in);
+    if(fread(&last_modification_n, sizeof(uint32_t), 1, fsock_in) < 1) {
+      printf("Error receiving last modification\n");
+      break;
+    }
     last_modification = ntohl(last_modification_n);
     printf("Received last modification: %u\n", last_modification);
     
@@ -129,6 +147,7 @@ int main(int argc, char *argv[]) {
     
     if(file_size != 0) {
       printf("Uncomplete file tranfer\n");
+      //break;
     } else {
       printf("File received correctly\n");
     }
@@ -139,4 +158,10 @@ int main(int argc, char *argv[]) {
   
   close(s);
   return 0;
+}
+
+void sigpipeHndlr(int signal) {
+  printf("SIGPIPE captured!\n");
+  sigpipe = 1;
+  return;
 }
