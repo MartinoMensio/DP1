@@ -1,6 +1,9 @@
 # my binary files to be ignored
 *.ignore
 
+# visual studio code temporary files
+.fuse_hidden*
+
 # Object files
 *.o
 *.ko
