@@ -83,18 +83,23 @@ int main(int argc, char *argv[]) {
   
   printf("Socket listen done\n");
   
-  sigpipe = 0;
   signal(SIGPIPE, sigpipeHndlr);
   
   while(1) {
     caddr_len = sizeof(caddr);
+    
+    printf("Waiting for a client to connect\n");
+    
     s_accepted = accept(s_listen, (struct sockaddr *)&caddr, &caddr_len);
+    
+    sigpipe = 0;
+    
     if(s_accepted < 0) {
       perror("Impossible to accept");
       break;
     }
     
-    printf("Accepted a connection from %s\n", inet_ntoa(caddr.sin_addr));
+    printf("Accepted a connection from %s:%d\n", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
     
     fsock_in = fdopen(s_accepted, "r");
     if(fsock_in == NULL) {
@@ -142,7 +147,7 @@ int main(int argc, char *argv[]) {
       
       // from now on, it is a get message
       if(sscanf(request, "%s %s", type, filename) != 2) {
-        printf("Wrong format in GET request");
+        printf("Wrong format in GET request\n");
         fprintf(fsock_out, ERR_MSG);
         continue;
       }
@@ -185,9 +190,13 @@ int main(int argc, char *argv[]) {
         fwrite(buffer, sizeof(char), n_read, fsock_out);
         if(sigpipe) {
           printf("Client closed socket\n");
+          receive_requests = 0;
           fclose(file);
           break;
         }
+      }
+      if(!receive_requests) {
+        break;
       }
       fclose(file);
       

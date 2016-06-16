@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
     
     if(strncmp(command, OK_MSG, MAX_COMMAND_LEN) != 0) {
       printf("Received an unknown response from server: %s\n", command);
-      continue;
+      break;
     }
     
     file = fopen(file_name, "w");
