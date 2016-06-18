@@ -88,17 +88,18 @@ int main(int argc, char *argv[]) {
   sigpipe = 0;
   signal(SIGPIPE, sigpipeHndlr);
   
-  printf("Ready. Write 'end' to quit\n");
+  printf("Ready. Use CTRL-D to quit\n");
   
   while(1) {
     printf("> ");
-    fgets(line, MAX_FILENAME_LEN, stdin);
+    if(fgets(line, MAX_FILENAME_LEN, stdin) == NULL) {
+      printf("You decided to quit\n");
+      fprintf(fsock_out,"%s\r\n", QUIT_MSG);
+      break;
+    }
     if(sscanf(line, "%s", file_name) != 1) {
       printf("Please provide a file name!\n");
       continue;
-    }
-    if(strncmp(file_name, "end", MAX_FILENAME_LEN) == 0) {
-      break;
     }
     
     fprintf(fsock_out, "%s %s\r\n", GET_MSG, file_name);
