@@ -38,11 +38,13 @@ int main(int argc, char *argv[]) {
   char file_name[MAX_FILENAME_LEN];
   FILE *fsock_in, *fsock_out;
   char command[MAX_COMMAND_LEN];
-  uint32_t file_size, last_modification, file_size_n, last_modification_n;
-  char buffer[DATA_CHUNK_SIZE];
+  uint32_t file_size, last_modification;
+  char *buffer;
   
   FILE *file;
-  uint n_read;
+  
+  message request, response;
+  XDR xdrs_in, xdrs_out;
     
   if(argc != 3) {
     fprintf(stderr, "Usage: %s <address> <port>\n", argv[0]);
@@ -86,6 +88,9 @@ int main(int argc, char *argv[]) {
   // unbuffered write
   setbuf(fsock_out, 0);
   
+  xdrstdio_create(&xdrs_in, fsock_in, XDR_DECODE);
+  xdrstdio_create(&xdrs_out, fsock_out, XDR_ENCODE);
+  
   // set SIGPIPE handler in order to avoid crashes
   sigpipe = 0;
   signal(SIGPIPE, sigpipeHndlr);
@@ -93,10 +98,14 @@ int main(int argc, char *argv[]) {
   printf("Ready. Use CTRL-D to quit\n");
   
   while(1) {
+    memset(&request, 0, sizeof(message));
+    memset(&response, 0, sizeof(message));
     printf("> ");
     if(fgets(line, MAX_FILENAME_LEN, stdin) == NULL) {
       printf("You decided to quit\n");
-      fprintf(fsock_out,"%s\r\n", QUIT_MSG);
+      //fprintf(fsock_out,"%s\r\n", QUIT_MSG);
+      request.tag = QUIT;
+      xdr_message(&xdrs_out, &request);
       break;
     }
     if(sscanf(line, "%s", file_name) != 1) {
@@ -104,19 +113,29 @@ int main(int argc, char *argv[]) {
       continue;
     }
     
-    fprintf(fsock_out, "%s %s\r\n", GET_MSG, file_name);
+    printf("you asked for file: %s\n", file_name);
+    //fprintf(fsock_out, "%s %s\r\n", GET_MSG, file_name);
+    request.tag = GET;
+    //strcpy(request.message_u.filename, file_name);
+    request.message_u.filename =  file_name;
+    xdr_message(&xdrs_out, &request);
     if(sigpipe) {
       printf("Socket was closed by server\n");
       break;
     }
     
-    fgets(command, MAX_COMMAND_LEN, fsock_in);
-    if(strncmp(command, ERR_MSG, MAX_COMMAND_LEN) == 0) {
+    // set pointer to null, so that xdr will allocate it
+    //response.message_u.fdata.contents.contents_val = NULL;
+    //fgets(command, MAX_COMMAND_LEN, fsock_in);
+    xdr_message(&xdrs_in, &response);
+    //if(strncmp(command, ERR_MSG, MAX_COMMAND_LEN) == 0) {
+    if(response.tag == ERR) {
       printf("Received an error message from server\n");
       continue;
     }
     
-    if(strncmp(command, OK_MSG, MAX_COMMAND_LEN) != 0) {
+    //if(strncmp(command, OK_MSG, MAX_COMMAND_LEN) != 0) {
+    if(response.tag != OK) {
       printf("Received an unknown response from server: %s\n", command);
       break;
     }
@@ -126,35 +145,41 @@ int main(int argc, char *argv[]) {
       perror("Impossible to open for creation requested file");
       continue;
     }
-    
+    /*
     if(fread(&file_size_n, sizeof(uint32_t), 1, fsock_in) < 1) {
       printf("Error receiving file size\n");
       break;
-    }
-    file_size = ntohl(file_size_n);
-    printf("Received file size: %u\n", file_size);
+    }*/
     
+    //file_size = ntohl(file_size_n);
+    file_size = response.message_u.fdata.contents.contents_len;
+    printf("Received file size: %u\n", file_size);
+    /*
     if(fread(&last_modification_n, sizeof(uint32_t), 1, fsock_in) < 1) {
       printf("Error receiving last modification\n");
       break;
-    }
-    last_modification = ntohl(last_modification_n);
+    }*/
+    //last_modification = ntohl(last_modification_n);
+    last_modification = response.message_u.fdata.last_mod_time;
     printf("Received last modification: %u\n", last_modification);
     
+    buffer = response.message_u.fdata.contents.contents_val;
+    /*
     while((n_read = fread(buffer, sizeof(char), (file_size > DATA_CHUNK_SIZE)? DATA_CHUNK_SIZE : file_size, fsock_in)) > 0) {
       file_size -= n_read;
       fwrite(buffer, sizeof(char), n_read, file);
-    }
+    }*/
+    fwrite(buffer, sizeof(char), file_size, file);
     
     fclose(file);
     
-    if(file_size != 0) {
-      printf("Uncomplete file tranfer\n");
-      //break;
-    } else {
-      printf("File received correctly\n");
-    }
+
+    printf("File received correctly\n");
+
   }
+  
+  xdr_destroy(&xdrs_in);
+  xdr_destroy(&xdrs_in);
   
   fclose(fsock_in);
   fclose(fsock_out);
