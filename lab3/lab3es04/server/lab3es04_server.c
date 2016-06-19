@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#include <rpc/xdr.h>
+#include "../types.h"
 
 #define BACKLOG 250
 #define MAX_REQUEST_LEN 512
@@ -36,10 +38,11 @@ int main(int argc, char *argv[]) {
   FILE *fsock_in, *fsock_out;
   uint caddr_len;
   
-  char request[MAX_REQUEST_LEN];
+  char request_str[MAX_REQUEST_LEN];
   char type[MAX_COMMAND_LEN];
   char filename[MAX_FILENAME_LEN];
   char buffer[DATA_CHUNK_SIZE];
+  char *buffer2;    // for xdr
   
   int receive_requests;
   FILE *file;
@@ -47,12 +50,18 @@ int main(int argc, char *argv[]) {
   struct stat sb;
   uint n_read;
   
+  int xdr = 0;
+  message request, response;
+  XDR xdrs_in, xdrs_out;
   
-  if(argc != 2) {
-    fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+  if(argc < 2) {
+    fprintf(stderr, "Usage: %s [-x] <port>\n", argv[0]);
     return 1;
   }
-  port = atoi(argv[1]);
+  if(strncmp(argv[1], "-x", 5) == 0) {
+    xdr = 1;
+  }
+  port = atoi(argv[1 + xdr]);
   if(port == 0) {
     fprintf(stderr, "Invalid port\n");
     return 1;
@@ -115,54 +124,86 @@ int main(int argc, char *argv[]) {
       continue;
     }
     
+    xdrstdio_create(&xdrs_in, fsock_in, XDR_DECODE);
+    xdrstdio_create(&xdrs_out, fsock_out, XDR_ENCODE);
+    
     setbuf(fsock_out, 0);
     
     receive_requests = 1;
     while(receive_requests) {
-      memset(request, 0, MAX_REQUEST_LEN);
-      if(fgets(request, MAX_REQUEST_LEN, fsock_in) == NULL) {
-        perror("Impossible to read a line from the socket. Maybe client closed connection");
-        receive_requests = 0;
-        break;
+      memset(request_str, 0, MAX_REQUEST_LEN);
+      memset(&request, 0, sizeof(message));
+      memset(&response, 0, sizeof(message));
+      if(xdr) {
+        if(!xdr_message(&xdrs_in, &request)) {
+          printf("Error receiving request\n");
+          break;
+        }
+        if(request.tag == QUIT) {
+          printf("Client asked to quit\n");
+          break;
+        } else if(request.tag != GET) {
+          printf("Unknown request received\n");
+          break;
+        }
+        strncpy(filename, request.message_u.filename, FILENAME_MAX);
+        printf("Received a GET request for file: %s\n", filename);
+        
+      } else {
+        if(fgets(request_str, MAX_REQUEST_LEN, fsock_in) == NULL) {
+          perror("Impossible to read a line from the socket. Maybe client closed connection");
+          receive_requests = 0;
+          break;
+        }
+        
+        printf("Received a request: %s\n", request_str);
+        
+        if(sscanf(request_str, "%s", type) != 1) {
+          // maybe empty line?
+          printf("Type of request not found\n");
+          fprintf(fsock_out, ERR_MSG);
+          continue;
+        }
+        
+        if(strncmp(type, QUIT_MSG, MAX_COMMAND_LEN) == 0) {
+          printf("Received a quit message\n");
+          break;
+        }
+        if(strncmp(type, GET_MSG, MAX_COMMAND_LEN) != 0) {
+          printf("Received an unknown request type\n");
+          fprintf(fsock_out, ERR_MSG);
+          break;
+        }
+        
+        // from now on, it is a get message
+        if(sscanf(request_str, "%s %s", type, filename) != 2) {
+          printf("Wrong format in GET request\n");
+          fprintf(fsock_out, ERR_MSG);
+          continue;
+        }
+        
+        printf("Parsed request: TYPE=%s FILENAME=%s\n", type, filename);
       }
-      
-      printf("Received a request: %s\n", request);
-      
-      if(sscanf(request, "%s", type) != 1) {
-        // maybe empty line?
-        printf("Type of request not found\n");
-        fprintf(fsock_out, ERR_MSG);
-        continue;
-      }
-      
-      if(strncmp(type, QUIT_MSG, MAX_COMMAND_LEN) == 0) {
-        printf("Received a quit message\n");
-        break;
-      }
-      if(strncmp(type, GET_MSG, MAX_COMMAND_LEN) != 0) {
-        printf("Received an unknown request type\n");
-        fprintf(fsock_out, ERR_MSG);
-        break;
-      }
-      
-      // from now on, it is a get message
-      if(sscanf(request, "%s %s", type, filename) != 2) {
-        printf("Wrong format in GET request\n");
-        fprintf(fsock_out, ERR_MSG);
-        continue;
-      }
-      
-      printf("Parsed request: TYPE=%s FILENAME=%s\n", type, filename);
       
       if(stat(filename, &sb)) {
         perror("Impossible to stat requested file");
-        fprintf(fsock_out, ERR_MSG);
+        if(xdr) {
+          response.tag = ERR;
+          xdr_message(&xdrs_out, &response);
+        } else {
+          fprintf(fsock_out, ERR_MSG);
+        }
         continue;
       }
       
       if((sb.st_mode & S_IFMT) != S_IFREG) {
         perror("The requested file is no a regular file");
-        fprintf(fsock_out, ERR_MSG);
+        if(xdr) {
+          response.tag = ERR;
+          xdr_message(&xdrs_out, &response);
+        } else {
+          fprintf(fsock_out, ERR_MSG);
+        }
         continue;
       }
       
@@ -177,22 +218,42 @@ int main(int argc, char *argv[]) {
         fprintf(fsock_out, ERR_MSG);
         continue;
       }
+      if(xdr) {
+        buffer2 = malloc(file_size * sizeof(char));
       
-      printf("Sending size and modification time\n");
-      
-      fprintf(fsock_out, "%s", OK_MSG);
-      fwrite(&file_size_n, sizeof(uint32_t), 1, fsock_out);
-      fwrite(&last_modification_n, sizeof(uint32_t), 1, fsock_out);
-      
-      printf("Sending the file\n");
-      
-      while((n_read = fread(buffer, sizeof(char), DATA_CHUNK_SIZE, file)) > 0) {
-        fwrite(buffer, sizeof(char), n_read, fsock_out);
-        if(sigpipe) {
-          printf("Client closed socket\n");
-          receive_requests = 0;
+        if(buffer2 == NULL) {
+          printf("Error allocating space. Maybe file is too big!\n");
+          response.tag = ERR;
+          xdr_message(&xdrs_out, &response);
           fclose(file);
           break;
+        }
+        
+        fread(buffer2, sizeof(char), file_size, file);
+        printf("Sending message\n");
+        response.tag = OK;
+        response.message_u.fdata.last_mod_time = sb.st_mtim.tv_sec;
+        response.message_u.fdata.contents.contents_len = file_size;
+        response.message_u.fdata.contents.contents_val = buffer2;
+        xdr_message(&xdrs_out, &response);
+        free(buffer2);
+      } else {
+        printf("Sending size and modification time\n");
+        
+        fprintf(fsock_out, "%s", OK_MSG);
+        fwrite(&file_size_n, sizeof(uint32_t), 1, fsock_out);
+        fwrite(&last_modification_n, sizeof(uint32_t), 1, fsock_out);
+        
+        printf("Sending the file\n");
+        
+        while((n_read = fread(buffer, sizeof(char), DATA_CHUNK_SIZE, file)) > 0) {
+          fwrite(buffer, sizeof(char), n_read, fsock_out);
+          if(sigpipe) {
+            printf("Client closed socket\n");
+            receive_requests = 0;
+            fclose(file);
+            break;
+          }
         }
       }
       if(!receive_requests) {
@@ -202,6 +263,9 @@ int main(int argc, char *argv[]) {
       
       printf("File sent\n");
     }
+    
+    xdr_destroy(&xdrs_in);
+    xdr_destroy(&xdrs_out);
     
     fclose(fsock_out);
     fclose(fsock_in);
