@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include <unistd.h>
 
 #define MAX_LINE_LEN 100
 #define MAX_REQUESTS 3

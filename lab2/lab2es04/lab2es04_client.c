@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <signal.h>
 #include <rpc/xdr.h>
 

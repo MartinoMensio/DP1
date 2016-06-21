@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <signal.h>
 
 #define MAX_REQUEST_LEN 512
