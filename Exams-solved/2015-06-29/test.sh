@@ -334,10 +334,10 @@ if [[ $TEST_01_PASSED == true ]] ; then
 				pid=$!
 				sleep 10
 			popd >> /dev/null
-			
+			read -p "going to update file. Press enter to continue"
 			# Update $BIG_TEST_FILE with the content of $BIG_TEST_FILE2
 			cp -f temp_dir/$BIG_TEST_FILE2 temp_dir/$BIG_TEST_FILE
-			
+			read -p "file updated. Press enter to continue"
 			# Wait for testclient to terminate
 			wait $pid
 			returnCode=$?
@@ -345,6 +345,7 @@ if [[ $TEST_01_PASSED == true ]] ; then
 			# Check testclient return code
 			echo -n "[TEST $test_suite.9] Checking return code of testclient (Return code = $returnCode)..."
 			sleep 5 # The file is big... We sleep some time to be sure the write is completed
+      			read -p "press enter to continue testing"
 			if [ $returnCode -eq 5 ] ; then
 				# Check received file is the same as the sample file
 				diff "client_temp_dir/$BIG_TEST_FILE" "$TOOLS_DIR/$BIG_TEST_FILE2" 2>&1 &> /dev/null
@@ -417,7 +418,6 @@ if [[ $TEST_02_PASSED == true ]] ; then
 		popd >> /dev/null
 		
 		sleep 5
-		
 		if [[ -s client_temp_dir/$SMALL_TEST_FILE ]] ; then
 			echo -e "[TEST $test_suite.1] File transferred. Test passed!\t\t\t\t\t\t\t[++TEST $test_suite.1 passed++] Ok!"
 			# Check received file is the same as the sample file
